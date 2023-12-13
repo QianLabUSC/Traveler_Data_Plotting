@@ -1,3 +1,16 @@
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
+###
+# File: /mud_field_analysis.py
+# Project: Visualization_Scripts
+# Created Date: Wednesday, October 18th 2023
+# Author: John Bush (johncbus@usc.edu)
+# -----
+# Last Modified: Thu Nov 02 2023
+# Modified By: John Bush
+# -----
+# Copyright (c) 2023 RoboLAND
+###
 from force_analysis import *
 from pick import pick
 import csv
@@ -28,7 +41,11 @@ class MudAnalyzer(TravelerAnalysisBase):
         print("You entered: ", water_percentage)
         confirm = input("Confirm? (y/n): ")
         if confirm == 'y':
-            return water_percentage
+            # normalized_water_content = (float(water_percentage) - 0.995) / (2.76 - 0.995)
+            normalized_water_content = ((float(water_percentage) * 27.1381) - 29.56) / 100.0
+            print("Normalized water content: ", normalized_water_content)
+            print("W=", (1- normalized_water_content))
+            return normalized_water_content
         else:
             return self.get_moisture()
 
@@ -58,16 +75,18 @@ class MudAnalyzer(TravelerAnalysisBase):
         # MUD23_L#T#_t1_Thu_Oct_12_16_44_34_2023
 
         force = self.data_dict['trimmed_force']
-        position = self.data_dict['trimmed_position']
+        position = self.data_dict['trimmed_pos']
 
 ## Calculate the average force from the shear data in the 85-95% position range
         pos_range = max(position) - min(position)
-        lower_pos = 0.85 * pos_range
-        upper_pos = 0.95 * pos_range
+        lower_pos = 0.33 * pos_range
+        upper_pos = 0.66 * pos_range
         lower_index = np.argmin(np.abs(position - lower_pos))
         upper_index = np.argmin(np.abs(position - upper_pos))
 
         steady_state_force = np.trapz(force[lower_index:upper_index], position[lower_index:upper_index]) / (position[upper_index] - position[lower_index])
+
+        print("Steady State Force: ", steady_state_force)
 
         self.trial_data = {
             'filename': filename,
@@ -79,13 +98,15 @@ class MudAnalyzer(TravelerAnalysisBase):
         }
 
     def run_analysis(self):
-        constant = [11.7909, 0.3615, 8.4203]
+        # constant = [11.7909, 0.3615, 8.4203] # old values
+        factors = [13.9165, 0.2558, 4.8759]
 
-        delta_phi = -constant(1) * ((self.trial_data['steady_state_force']/constant(0)) ** (1/constant(2)) - 1)
-        phi_j = delta_phi + (1 - self.trial_data['water_ratio'])
+        delta_phi = -factors[1] * ((self.trial_data['steady_state_force']/factors[0]) ** (1/factors[2]) - 1)
+        phi_j = delta_phi + (1 - float(self.trial_data['water_ratio']))
         print("phi_j = ", phi_j)
 
-        clay_ratio = (phi_j - 0.85)/(-0.2) + 0.5
+        clay_ratio = (phi_j - 0.885)/(-0.42) + 0.5 # based on clay ratio to phi_j relationship curve
+        # clay_ratio = (phi_j - 0.85)/(-0.2) + 0.5 # based on clay ratio to phi_j relationship curve
         print("estimated clay ratio = ", clay_ratio)
 
         self.write_to_file(self.output_filename, self.trial_data['filename'], phi_j, clay_ratio)
@@ -95,8 +116,11 @@ class MudAnalyzer(TravelerAnalysisBase):
         
         # if filename does not exist, create it and write the values to it
         with open(filename, 'a') as csvfile:
+            print('Writing to file: ', filename)
             writer = csv.writer(csvfile)
             writer.writerow([value1, value2, value3])
+            # writer.writerow('\n')
+            csvfile.close()
         
 
 
@@ -128,4 +152,5 @@ class MudAnalyzer(TravelerAnalysisBase):
 
 if __name__ == "__main__":
     test_ = MudAnalyzer()
-    test_.test_computation(3, 0.2)
+    test_.run()
+    # test_.test_computation(3, 0.2)

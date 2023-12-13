@@ -1,0 +1,7 @@
+ARCHIVE/
+MATLAB/
+*.pyc
+__pycache__/
+*.zip
+*.csv
+

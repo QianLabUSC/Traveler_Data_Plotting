@@ -11,8 +11,8 @@ class VideoPlayer(TravelerAnalysisBase):
         self.fig, (self.ax, self.video_ax) = plt.subplots(2, 1, figsize=(10,12))
   
         # handle time offset of video and data
-        # increasing the value 
-        self.bias = 0.7 # seconds
+        # increasing the value delays the video relative to the data
+        self.bias = 0.5 # seconds
 
         # variable initializations
         self.cap = None

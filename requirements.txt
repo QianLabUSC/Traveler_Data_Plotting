@@ -2,4 +2,6 @@ matplotlib
 numpy
 pandas
 scipy
+pick
+plotly
 conda install -c conda-forge python-kaleido

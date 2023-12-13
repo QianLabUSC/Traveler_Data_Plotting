@@ -1,3 +1,16 @@
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
+###
+# File: /flex_plotter_px.py
+# Project: Visualization_Scripts
+# Created Date: Wednesday, September 20th 2023
+# Author: John Bush (johncbus@usc.edu)
+# -----
+# Last Modified: Wed Nov 08 2023
+# Modified By: John Bush
+# -----
+# Copyright (c) 2023 RoboLAND
+###
 from force_analysis import *
 from pick import pick
 import csv
@@ -80,22 +93,29 @@ class FlexPlotter(TravelerAnalysisBase):
         self.intersection_IDs = []
         self.penetration_vs_shear = False
         
-        self.continuous_options = ['Position', 'Time', 'Force']
+        self.continuous_options = ['Position', 'Time', 'Force', 'Velocity']
         self.continuous_option_units = [' (meters)',
                                         ' (sec)',
-                                        ' (N)']
+                                        ' (N)',
+                                        ' (m/s)']
         self.aggregate_options = ['Transect-Flag Number', 
                                   'Flag Number', 
                                   'Average Force', 
                                   'Average Stiffness', 
                                   'Average Stick-Slip Period', 
-                                  'Average Yield']
+                                  'Average Yield',
+                                  'Max Force Drop',
+                                  'Force Drop Slope',
+                                  'Penetration Deformation']
         self.aggregate_option_units = ['',
                                        '',
                                        ' (N)',
                                        ' (N/m)',
                                        ' (m)',
-                                       ' (N)']
+                                       ' (N)',
+                                       ' (N)',
+                                       ' (N/m)',
+                                       ' (m)']
         
         # units for penetration vs shear
         self.comparison_options = ['Average Force', 
@@ -143,46 +163,6 @@ class FlexPlotter(TravelerAnalysisBase):
             self.create_plot()
             
             self.menu_prompt()
- 
-    def calculate_metrics(self):
-        max_indices = self.data_dict['max_indices']
-        min_indices = self.data_dict['min_indices']
-        unique_pos = self.data_dict['smoothed_pos']
-        smoothed_force = self.data_dict['smoothed_force']
-        
-        # local maxima positions and values
-        max_pos = unique_pos[max_indices]
-        print('number of max pos: ', len(max_pos))
-        max_force = smoothed_force[max_indices]
-
-        # local minima positions and values
-        min_pos = unique_pos[min_indices]
-        min_force = smoothed_force[min_indices]
-
-        slopes = []
-        stickSlip = []
-        average_yield = np.mean(max_force)
-
-        for min_idx in range(len(min_pos)):
-            # get the next maximum with a position greather than the current min,
-            # but less than the next min.
-            for max_idx in range(len(max_pos)):
-                # if the position of the max is greater than the current min and less than the next min:
-                # if (max_pos[max_idx] > min_pos[min_idx] and max_pos[max_idx] < min_pos[min_idx+1]):
-                if (max_pos[max_idx] > min_pos[min_idx] and 
-                    ((min_idx == len(min_pos) - 1) or (max_pos[max_idx] < min_pos[min_idx+1]))):
-                    # calculate the tear length and the slope
-                    tear = (max_pos[max_idx] - min_pos[min_idx])
-                    curr_slope = (max_force[max_idx] - min_force[min_idx]) / tear
-
-                    if (curr_slope > 25000): # this is a safeguard against outliers
-                        print('Outlier Slope: ', curr_slope) 
-                    else:
-                        slopes.append(curr_slope)
-                        stickSlip.append(tear)
-                    break
-
-        return slopes, stickSlip, average_yield
     
     def process_features(self, filename):
         # read the data from the file
@@ -223,35 +203,16 @@ class FlexPlotter(TravelerAnalysisBase):
         for index, row in data.iterrows():
             raw_dict[row['id']] = row[col]
 
+        if (name == 'moisture'):
+            for id, data in raw_dict.items():
+                pass
+            # ! WTF IS THIS CODE DOING
+
         # output a vector matched to the order of the aggregated data
         self.feature_dict[name] = self.match_data(self.aggregated_data['trial_IDs'], raw_dict)
-        
 
-        # # process tags column if present
-        # if ('tags' in data.columns):
-        #     # ID is in form 'L#T#F#'
-        #     # construct a tag dictionary, mapping tags to a list of IDs
-        #     for index, row in data.iterrows():
-        #         tag_list = row['tags'].replace(" ", '').split(',') # remove trailing quotes, spaces and split by comma
-        #         for tag in tag_list:
-        #             if (tag not in self.feature_dict[name]):
-        #                 self.feature_dict[name][tag] = []
-        #             self.feature_dict[name][tag].append(row['id'])
-            
-        #     print(self.feature_dict.keys())
-        
-        # # process the feature file as numeric data associated with IDs
-        # if ('data' in data.columns):
-        #     # make a dictionary that maps ids to data entries
-        #     for index, row in data.iterrows():
-        #         data_elements = float(row['data'].replace(" ", '').split(',')) # remove trailing quotes, spaces and split by comma and then cast to float
-        #         id = row['id']
-        #         for element in data_elements:
-        #             if (id not in self.feature_dict[name]):
-        #                 self.feature_dict[name][id] = []
-        #             self.feature_dict[name][id].append(data_elements)
-            
-        #     print(self.feature_dict.keys())
+
+
 
     def match_data(self, ref_vec, match_dict):
         # produces an output vector with the data in match_dict corresponding
@@ -291,11 +252,12 @@ class FlexPlotter(TravelerAnalysisBase):
         force = self.data_dict['trimmed_force']
         pos = self.data_dict['trimmed_pos']
         time = self.data_dict['trimmed_time']
+        velocity = self.data_dict['velocity']
         avg_force = self.data_dict['average_force']
 
-        stiffness, stick_slip, average_yield = self.calculate_metrics()
-        print('Number of Stiffnes Measurements: ', len(stiffness))
-        print('Number of Stick-Slip Measurements: ', len(stick_slip))
+        stiffness, stick_slip, average_yield, max_drop, max_drop_slope, deformation = self.calculate_metrics()
+        # print('Number of Stiffness Measurements: ', len(stiffness))
+        # print('Number of Stick-Slip Measurements: ', len(stick_slip))
 
         # store the data in a dictionary
         trial_dict = {
@@ -308,10 +270,14 @@ class FlexPlotter(TravelerAnalysisBase):
             'force': force,
             'pos': pos,
             'time': time,
+            'velocity': velocity,
             'avg_force': avg_force,
             'stiffness': stiffness,
             'stick_slip': stick_slip,
-            'average_yield': average_yield
+            'average_yield': average_yield,
+            'max_drop': max_drop,
+            'max_drop_slope': max_drop_slope,
+            'max_drop_deformation': deformation
         }
 
         # append the dictionary for the trial to the data vector
@@ -331,6 +297,7 @@ class FlexPlotter(TravelerAnalysisBase):
         numericTags = []
         trial_IDs = []
         locations = []
+        transects = []
         flagNums = []
         avgForce = []
         avgStiffness = []
@@ -349,10 +316,15 @@ class FlexPlotter(TravelerAnalysisBase):
             counter += 1
             flagNums.append(trial['flag_number'])
             locations.append(trial['location'])
+            transects.append(trial['transect'])
             avgForce.append(trial['avg_force'])
             avgStiffness.append(np.mean(trial['stiffness']))
             avgStickSlip.append(np.mean(trial['stick_slip']))
             avgYield.append(trial['average_yield'])
+
+        drops = [d.get('max_drop', None) for d in self.data_vector]
+        drop_slopes = [d.get('max_drop_slope', None) for d in self.data_vector]
+        deformations = [d.get('max_drop_deformation', None) for d in self.data_vector]
         
         
         self.aggregated_data = {
@@ -360,11 +332,15 @@ class FlexPlotter(TravelerAnalysisBase):
             'trial_IDs': trial_IDs,
             'numericTags': numericTags,
             'locations': locations,
+            'transects': transects,
             'flagNums': flagNums,
             'avgForce': avgForce,
             'avgStiffness': avgStiffness,
             'avgStickSlip': avgStickSlip,
-            'avgYield': avgYield
+            'avgYield': avgYield,
+            'drops': drops,
+            'drop_slopes': drop_slopes,
+            'deformations': deformations
         }
 
     def output_data(self):
@@ -523,15 +499,15 @@ class FlexPlotter(TravelerAnalysisBase):
                                     showlegend=False,
                                     marker=dict(
                                     size=16,
-                                    color=self.aggregated_data['flagNums'], #set color equal to a variable
-                                    colorscale='hot', # one of plotly colorscales
+                                    color=self.aggregated_data['locations'], #set color equal to a variable
+                                    colorscale='bluered', # one of plotly colorscales
                                     showscale=False
                                 )))
 
         # # Edit the layout
         # set x and y axis labels for aggregate data
         self.fig.update_layout(
-                            title=x_axis + ' vs. ' + y_axis,
+                            title=y_axis + ' vs. ' + x_axis,
                             xaxis_title=x_axis + self.aggregate_option_units[self.x_choice_idx],
                             yaxis_title=y_axis + self.aggregate_option_units[self.y_choice_idx],
                             font=dict(
@@ -754,6 +730,8 @@ class FlexPlotter(TravelerAnalysisBase):
                 x_data = 'pos'
             elif (x_axis == 'Force'):
                 x_data = 'force'
+            elif (x_axis == 'Velocity'):
+                x_data = 'velocity'
             
             if (y_axis == 'Time'):
                 y_data = 'time'
@@ -761,39 +739,12 @@ class FlexPlotter(TravelerAnalysisBase):
                 y_data = 'pos'
             elif (y_axis == 'Force'):
                 y_data = 'force'
+            elif (y_axis == 'Velocity'):
+                y_data = 'velocity'
 
         elif (self.plot_mode == 1): # aggregate plotting
-            if (x_axis == 'Transect-Flag Number'):
-                x_data = self.aggregated_data['numericTags']
-            elif (x_axis == 'Flag Number'):
-                x_data = self.aggregated_data['flagNums']
-            elif (x_axis == 'Average Force'):
-                x_data = self.aggregated_data['avgForce']
-            elif (x_axis == 'Average Stiffness'):
-                x_data = self.aggregated_data['avgStiffness']
-            elif (x_axis == 'Average Stick-Slip Period'):
-                x_data = self.aggregated_data['avgStickSlip']
-            elif (x_axis == 'Average Yield'):
-                x_data = self.aggregated_data['avgYield']
-            else: 
-                # assume that this case is the choice of one of the added feature vectors
-                x_data = self.feature_dict[x_axis]
-
-            if (y_axis == 'Transect-Flag Number'):
-                y_data = self.aggregated_data['numericTags']
-            elif (y_axis == 'Flag Number'):
-                y_data = self.aggregated_data['flagNums']
-            elif (y_axis == 'Average Force'):
-                y_data = self.aggregated_data['avgForce']
-            elif (y_axis == 'Average Stiffness'):
-                y_data = self.aggregated_data['avgStiffness']
-            elif (y_axis == 'Average Stick-Slip Period'):
-                y_data = self.aggregated_data['avgStickSlip']
-            elif (y_axis == 'Average Yield'):
-                y_data = self.aggregated_data['avgYield']
-            else:
-                # assume that this case is the choice of one of the added feature vectors
-                y_data = self.feature_dict[y_axis]
+            x_data = self.choose_aggregate_series(x_axis)
+            y_data = self.choose_aggregate_series(y_axis)
         
         elif (self.plot_mode == 2): # penetration vs shear plotting
             if (x_axis == 'Average Force'):
@@ -816,8 +767,33 @@ class FlexPlotter(TravelerAnalysisBase):
         
         return x_data, y_data
     
+    def choose_aggregate_series(self, axis):
+        if (axis == 'Transect-Flag Number'):
+            data = self.aggregated_data['numericTags']
+        elif (axis == 'Flag Number'):
+            data = self.aggregated_data['flagNums']
+        elif (axis == 'Average Force'):
+            data = self.aggregated_data['avgForce']
+        elif (axis == 'Average Stiffness'):
+            data = self.aggregated_data['avgStiffness']
+        elif (axis == 'Average Stick-Slip Period'):
+            data = self.aggregated_data['avgStickSlip']
+        elif (axis == 'Average Yield'):
+            data = self.aggregated_data['avgYield']
+        elif (axis == 'Max Force Drop'):
+            data = self.aggregated_data['drops']
+        elif (axis == 'Force Drop Slope'):
+            data = self.aggregated_data['drop_slopes']
+        elif (axis == 'Penetration Deformation'):
+            data = self.aggregated_data['deformations']
+        else: 
+            # assume that this case is the choice of one of the added feature vectors
+            data = self.feature_dict[axis]
+
+        return data
+
     
-    def save_plot(self, fig_folder='figures'):
+    def save_plot(self, fig_folder='figures/'):
         parent_path = self.filepath
         figure_path = parent_path.replace('data/', '')
         path = os.path.join(figure_path, fig_folder)

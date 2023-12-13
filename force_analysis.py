@@ -17,7 +17,7 @@ from bisect import bisect_right
 
 
 class TravelerAnalysisBase:
-    def __init__(self):
+    def __init__(self, _bypass_selection=False):
         ## Base Parameters:
         self.trimTrailingData = False
         
@@ -28,14 +28,17 @@ class TravelerAnalysisBase:
         self.extrusionAngle = 0
         self.data_dict = {}
         self.feature_files = [] # this is just used in flex_plotter.. but has to be present here for inheritance
-        
+
+        self.bypass_selection = _bypass_selection
         self.user_selection()
 
     def user_selection(self):
         root = tk.Tk()
         root.withdraw()  # Hide the main window
-
-        self.mode = input("Enter mode (b)atch or (s)ingle: ")
+        
+        if (self.bypass_selection == False):
+            self.mode = input("Enter mode (b)atch or (s)ingle: ")
+        
         # default to running in single mode
         if self.mode == 'b':
             self.filepath = self.select_directory()
@@ -59,7 +62,7 @@ class TravelerAnalysisBase:
         # plt.show()
 
     def process_file(self):
-        print('\n\nProcessing file ', self.path_index, ' of ', len(self.paths), '...')
+        # print('\n\nProcessing file ', self.path_index, ' of ', len(self.paths), '...')
         self.curr_file_valid = True
         # Read data from path
         self.travelerRead()
@@ -75,7 +78,7 @@ class TravelerAnalysisBase:
         root.withdraw()  # Hide the main window
         
         file_path = filedialog.askopenfilename()
-        print('Selected file: ', file_path)
+        # print('Selected file: ', file_path)
         # if file_path:
         #     print(f"Selected file: {file_path}")
         #     # Add your file processing logic here, e.g., open the file and read its contents
@@ -131,8 +134,10 @@ class TravelerAnalysisBase:
         # Extract extrusionAngle value and store it
         self.extrusionAngle = float(varValues[2]) 
 
-        print('Ground Height: ', self.groundHeight)
-        print('Extrusion Angle: ', self.extrusionAngle)
+        self.shear_length = float(varValues[7])
+
+        # print('Ground Height: ', self.groundHeight)
+        # print('Extrusion Angle: ', self.extrusionAngle)
 
         # Read the rest of the data using Pandas
         data = pd.read_csv(self.path, skiprows=2)
@@ -150,7 +155,8 @@ class TravelerAnalysisBase:
             data['toeforce_x'] = -data['toeforce_x']
 
         if (version == 2):
-            data['toe_position_x'] = -data['toe_position_x'] + 0.08
+            data['toe_position_x'] = -data['toe_position_x'] + (self.shear_length/2)
+            data['toeforce_x'] = -data['toeforce_x']
 
         # !check the fuck out of this math
         intrusion_force = math.sin(math.radians(self.extrusionAngle)) * data['toeforce_x'] + math.cos(math.radians(self.extrusionAngle)) * data['toeforce_y']
@@ -201,6 +207,7 @@ class TravelerAnalysisBase:
     def minmax_finder(self):
         position = self.data_dict['trimmed_pos']
         force = self.data_dict['trimmed_force']
+        time = self.data_dict['trimmed_time']
 
         if (len(position) == 0):
             if self.data_dict['mode'] == 0: # penetration
@@ -214,6 +221,12 @@ class TravelerAnalysisBase:
         sorted_indices = np.argsort(position)
         position = position[sorted_indices]
         force = force[sorted_indices]
+        time = time[sorted_indices]
+
+        # calculate the velocity of the intruder
+        velocity = np.gradient(position, time)
+        self.data_dict['velocity'] = velocity
+
 
         # Remove duplicate pos values and correspondingly update the force values
         unique_indices = np.unique(position, return_index=True)[1]
@@ -223,27 +236,45 @@ class TravelerAnalysisBase:
         smoothed_force = unique_force
 
         if (len(unique_force) < 12):
-            print('WARNING: Irregular Distance Detected... skipping file...')
+            # print('WARNING: Irregular Distance Detected... skipping file...')
             self.curr_file_valid = False
         else:
             # Smooth the force data using Savitzky-Golay filter
-            smoothed_force = savgol_filter(unique_force, window_length=11, polyorder=3)
+            # smoothed_force = savgol_filter(unique_force, window_length=11, polyorder=3)
+            smoothed_force = unique_force
 
         # Calculate the average force for prominence threshold calculation
         average_force = np.trapz(unique_force, unique_pos) / unique_pos[-1]
         if (average_force < 0 and self.data_dict['mode'] == 0):
-            print('WARNING: Irregular Force Profile Detected... skipping file...')
+            # print('WARNING: Irregular Force Profile Detected... skipping file...')
             self.curr_file_valid = False
+
+        if (self.data_dict['version'] == 2): # for the mud shear, we use a different average force
+            ## Calculate the average force from the shear data in the 85-95% position range
+            pos_range = max(position) - min(position)
+            lower_pos = 0.25 * pos_range
+            upper_pos = 0.75 * pos_range
+            lower_index = np.argmin(np.abs(position - lower_pos))
+            upper_index = np.argmin(np.abs(position - upper_pos))
+
+            average_force = np.trapz(force[lower_index:upper_index], position[lower_index:upper_index]) / (position[upper_index] - position[lower_index])
+
         self.data_dict['average_force'] = average_force 
-        print('Average Force: ', average_force)
+        # print('Average Force: ', average_force)
         prominence_threshold = np.abs(0.2 * average_force)
 
         # Find local maxima and minima pos values using the prominence threshold
-        pos_max, _ = find_peaks(smoothed_force, prominence=prominence_threshold)
-        pos_min, _ = find_peaks(-1.0 * smoothed_force, prominence=prominence_threshold)
+        pos_max, _ = find_peaks(smoothed_force, prominence=prominence_threshold, distance=10)
+        pos_min, _ = find_peaks(-1.0 * smoothed_force, prominence=prominence_threshold, distance=10)
 
         # Insert a zero at the beginning of pos_min array
         pos_min = np.insert(pos_min, 0, 0)
+
+        min_comp = np.insert(pos_min, 0, 0)
+        max_comp = np.insert(pos_max, 0, 0)
+        min_diff = np.average(np.subtract(pos_min, min_comp[:-1]))
+        max_diff = np.average(np.subtract(pos_max, max_comp[:-1]))
+
 
         # add the last datapoint to the pos_min array
         # pos_min = np.insert(pos_min, len(pos_min), len(unique_pos) - 1)
@@ -259,8 +290,8 @@ class TravelerAnalysisBase:
         if (self.trimTrailingData and pos_min[-1] > pos_max[-1]):
             trim_value = unique_pos[pos_max[-1]]
             trim_num = 0
-            for min in pos_min:
-                if (unique_pos[min] > trim_value):
+            for min_ in pos_min:
+                if (unique_pos[min_] > trim_value):
                     trim_num += 1
             pos_min = pos_min[0:-trim_num]
             range_end = self.find_closest_index(position, trim_value)
@@ -274,6 +305,74 @@ class TravelerAnalysisBase:
         self.data_dict['smoothed_force'] = smoothed_force
 
         return pos_max, pos_min, unique_pos, smoothed_force, average_force
+    
+
+    def calculate_metrics(self):
+        max_indices = self.data_dict['max_indices']
+        min_indices = self.data_dict['min_indices']
+        unique_pos = self.data_dict['smoothed_pos']
+        smoothed_force = self.data_dict['smoothed_force']
+        
+        # local maxima positions and values
+        max_pos = unique_pos[max_indices]
+        print('number of max pos: ', len(max_pos))
+        max_force = smoothed_force[max_indices]
+
+        # local minima positions and values
+        min_pos = unique_pos[min_indices]
+        min_force = smoothed_force[min_indices]
+
+        slopes = []
+        stickSlip = []
+        average_yield = np.mean(max_force)
+
+        for min_idx in range(len(min_pos)):
+            # get the next maximum with a position greater than the current min,
+            # but less than the next min.
+            for max_idx in range(len(max_pos)):
+                # if the position of the max is greater than the current min and less than the next min:
+                # if (max_pos[max_idx] > min_pos[min_idx] and max_pos[max_idx] < min_pos[min_idx+1]):
+                if (max_pos[max_idx] > min_pos[min_idx] and 
+                    ((min_idx == len(min_pos) - 1) or (max_pos[max_idx] < min_pos[min_idx+1]))):
+                    # calculate the tear length and the slope
+                    tear = (max_pos[max_idx] - min_pos[min_idx])
+                    curr_slope = (max_force[max_idx] - min_force[min_idx]) / tear
+
+                    if (curr_slope > 25000): # this is a safeguard against outliers
+                        print('Outlier Slope: ', curr_slope) 
+                    else:
+                        slopes.append(curr_slope)
+                        stickSlip.append(tear)
+                    break
+
+        # find the max and subsequent min that have the greatest difference.
+
+        max_drop = 0
+        max_drop_max_idx = -1
+        max_drop_min_idx = -1
+        for max_idx in range(len(max_pos)):
+            # get the subsequent min (if any)
+            for min_idx in range(len(min_pos)):
+                if (max_pos[max_idx] < min_pos[min_idx]):
+                    # calculate the drop
+                    drop = max_force[max_idx] - min_force[min_idx]
+                    if (drop > max_drop):
+                        max_drop = drop
+                        max_drop_max_idx = max_idx
+                        max_drop_min_idx = min_idx
+                    break
+        
+        # using the indices, calculate the magnitude of the force drop, the slope of the force drop,
+        # and the deformation of the drop. If the indices are -1, then return None for all values
+        if (max_drop == 0):
+            max_drop = None
+            max_drop_slope = None
+            max_drop_deformation = None
+        else:
+            max_drop_slope = -1.0 * (max_drop) / (max_pos[max_drop_max_idx] - min_pos[max_drop_min_idx])
+            max_drop_deformation = max_pos[max_drop_max_idx]
+
+        return slopes, stickSlip, average_yield, max_drop, max_drop_slope, max_drop_deformation
 
 
     def parse_filename(self):
@@ -292,6 +391,7 @@ class TravelerAnalysisBase:
             version = 0
 
         if ('mud' in filename_args[0].lower()):
+            print('Mud Experiment Detected... Using Version 2...')
             version = 2
 
         protocol = filename_args[3]
@@ -310,6 +410,9 @@ class TravelerAnalysisBase:
             protocol_string = 'Angled Penetration'
         elif (protocol == 'RP'):
             protocol_string = 'Repeated Penetration'
+        elif (version == 2):
+            protocol_string = 'Mud Shear'
+            mode = 2
         else:
             print('Protocol not recognized for file: ', filename)
 
@@ -331,6 +434,9 @@ class TravelerAnalysisBase:
         transect = transect.replace('T', 'Transect ')
 
         flag = filename_args[4].replace('F', '')
+        
+        if (version == 2): # for mud trials
+            flag = filename_args[3].replace('F', '')
         flag_temp = re.sub(r'[a-zA-Z]', '', flag)
         if (flag_temp == ''):
             flag_temp = -1
@@ -365,9 +471,11 @@ class TravelerAnalysisBase:
         force_vector = []
         
         if (self.data_dict.get('mode') == 0):
+            print('Penetration Trial')
             pos_vector = self.data_dict['position_y']
             force_vector = self.data_dict['force_y']
         else :
+            print('Shear Trial')
             pos_vector = self.data_dict['position_x']
             force_vector = self.data_dict['force_x']
 
@@ -377,6 +485,7 @@ class TravelerAnalysisBase:
             # find first and last index where state is 3
             start_i = np.argmax(state_vector == 3)
             end_i = len(state_vector) - np.argmax(state_vector[::-1] == 3) - 1
+            pos_ = pos_vector[0:end_i]
             
         else: # WS and MH+ trim based on position
             # find the maximum extension, cut off data after that
@@ -402,7 +511,7 @@ class TravelerAnalysisBase:
             if (idx+start_i < end_i):
                 start_i = max(start_i, idx+start_i)
  
-        print('Range of i: [', start_i, ', ', end_i, ']')
+        # print('Range of i: [', start_i, ', ', end_i, ']')
 
         if (start_i >= end_i):
             print('Ranging error: i_start >= end_i...')
@@ -428,7 +537,9 @@ class TravelerAnalysisBase:
         force_ = force_vector[start_i:end_i]
         # y_pos_ = data['position_y'][i_start:end_i] - data['position_y'][i_start]
 
-        pos, force = self.trim_data(pos_, force_) 
+        # pos, force = self.trim_data(pos_, force_) 
+        self.data_dict['trimmed_pos'] = pos_
+        self.data_dict['trimmed_force'] = force_
 
         max_indices, min_indices, smooth_pos, smooth_force, average_force = self.minmax_finder()
 
@@ -457,6 +568,7 @@ class TravelerAnalysisBase:
         if (self.data_dict.get('mode') == 0):
             self.ax.set_xlabel('Vertical Depth (meters)', fontsize=18)
             self.ax.set_ylabel('Penetration Force (N)', fontsize=18)
+            self.ax.set_xlim(0, 0.05)
         else:
             self.ax.set_xlabel('Shear Length (meters)', fontsize=18)
             self.ax.set_ylabel('Shear Force (N)', fontsize=18)
@@ -471,15 +583,16 @@ class TravelerAnalysisBase:
         filename = self.path.split('/')[-1]
         parent_path = self.path.rstrip(filename)
         figure_path = parent_path.replace('data/', '')
-        path = os.path.join(figure_path, fig_folder)
-        if not os.path.exists(path):
-            os.mkdir(path)
-        self.save_path = path
-        plot_save_name = filename.replace('.csv', '.png')
-        # directory_path = '/home/qianlab/lassie-traveler/experiment_records/MH23_Data/'
-        save_path_png = os.path.join(path, plot_save_name)
+        self.output_path = os.path.join(figure_path, fig_folder)
+        if not os.path.exists(self.output_path):
+            os.mkdir(self.output_path)
+        self.save_path = self.output_path
+        png_save_name = filename.replace('.csv', '.png')
+        
+
+        save_path_png = os.path.join(self.output_path, png_save_name)
         # print('Saving figure as file: ' + save_path_png)
-        self.fig.savefig(save_path_png, bbox_inches='tight', transparent=False, dpi=300)
+        # self.fig.savefig(save_path_png, bbox_inches='tight', transparent=False, dpi=300)
 
 
 ## Utility functions
