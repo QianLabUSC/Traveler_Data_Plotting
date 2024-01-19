@@ -20,6 +20,7 @@ class TravelerAnalysisBase:
     def __init__(self, _bypass_selection=False):
         ## Base Parameters:
         self.trimTrailingData = False
+        self.showLeadingData = False
         
         self.filepath = ''
         self.paths = []
@@ -48,6 +49,11 @@ class TravelerAnalysisBase:
             self.paths.append(self.filepath)
         
         root.destroy()
+
+        # if self.paths is empty, exit
+        if (len(self.paths) == 0):
+            print('No files selected... exiting...')
+            exit()
 
 
     def run(self):
@@ -232,6 +238,7 @@ class TravelerAnalysisBase:
         unique_indices = np.unique(position, return_index=True)[1]
         unique_pos = position[unique_indices]
         unique_force = force[unique_indices]
+        unique_time = time[unique_indices]
 
         smoothed_force = unique_force
 
@@ -303,6 +310,7 @@ class TravelerAnalysisBase:
         self.data_dict['min_indices'] = pos_min
         self.data_dict['smoothed_pos'] = unique_pos
         self.data_dict['smoothed_force'] = smoothed_force
+        self.data_dict['smoothed_time'] = unique_time
 
         return pos_max, pos_min, unique_pos, smoothed_force, average_force
     
@@ -367,12 +375,43 @@ class TravelerAnalysisBase:
         if (max_drop == 0):
             max_drop = None
             max_drop_slope = None
-            max_drop_deformation = None
+            # max_drop_deformation = None
+            max_force_val = 0
+            for max_idx in range (len(max_pos)):
+                if (max_force[max_idx] > max_force_val):
+                    max_force_val = max_force[max_idx]
+                    max_drop_max_idx = max_idx
+            max_drop_deformation = max_pos[max_drop_max_idx]
+
         else:
             max_drop_slope = -1.0 * (max_drop) / (max_pos[max_drop_max_idx] - min_pos[max_drop_min_idx])
             max_drop_deformation = max_pos[max_drop_max_idx]
 
-        return slopes, stickSlip, average_yield, max_drop, max_drop_slope, max_drop_deformation
+        # get displacement of first maximum divided by total depth
+        first_max = max_pos[0]
+        total_depth = unique_pos[-1]
+        first_rupture_increment = max_drop_deformation / total_depth
+
+        # get greatest max force value and total depth
+        peak_force = max(max_force)
+        total_depth = unique_pos[-1]
+        first_yield = max_force[0]
+
+
+        return slopes, stickSlip, average_yield, max_drop, max_drop_slope, max_drop_deformation, first_rupture_increment, peak_force, total_depth, first_yield
+
+    def linear_regression(self, x, y, limit):
+        # compute linear regression of x, y data on x domain [0, limit]
+
+        # get index of limit
+        limit_index = np.argmin(np.abs(x - limit))
+
+        trimmed_x = x[0:limit_index]
+        trimmed_y = y[0:limit_index]
+
+        # calculate linear regression
+        slope, intercept = np.polyfit(trimmed_x, trimmed_y, 1)
+        return slope, intercept
 
 
     def parse_filename(self):
@@ -470,6 +509,7 @@ class TravelerAnalysisBase:
         pos_vector = []
         force_vector = []
         
+        # select Penetration or Shear Data
         if (self.data_dict.get('mode') == 0):
             print('Penetration Trial')
             pos_vector = self.data_dict['position_y']
@@ -478,6 +518,7 @@ class TravelerAnalysisBase:
             print('Shear Trial')
             pos_vector = self.data_dict['position_x']
             force_vector = self.data_dict['force_x']
+
 
         if (self.data_dict['version'] == 2): # mud shear data analysis based on state flag
             state_vector = self.data_dict['state']
@@ -490,7 +531,6 @@ class TravelerAnalysisBase:
         else: # WS and MH+ trim based on position
             # find the maximum extension, cut off data after that
             end_i = np.argmax(pos_vector)
-            old_end_i = end_i
             max_pos = pos_vector[end_i]
             
             # return if intruder never reached positive depth 
@@ -523,12 +563,21 @@ class TravelerAnalysisBase:
             self.curr_file_valid = False
             return
         
+        # normalize the positional data
+        pos_ = pos_ - pos_[start_i]
+
+        # shows the first 5mm before crust contact.
+        if (self.showLeadingData):
+            # find the index of position at -0.005m (5mm)
+            index = self.find_closest_index(pos_, -0.005)
+            start_i = index
+        
         # store the starting index
         self.data_dict['start_index'] = start_i
         self.data_dict['end_index'] = end_i
 
-        # normalize the positional data to start at zero
-        pos_ = pos_[start_i:] - pos_[start_i]
+        # trim the position data
+        pos_ = pos_[start_i:end_i]
 
         # trim the time data
         time = self.data_dict['time'][start_i:end_i]
@@ -548,6 +597,7 @@ class TravelerAnalysisBase:
         # reinitialize vectors based on changes from minmax finder
         pos = self.data_dict['trimmed_pos']
         force = self.data_dict['trimmed_force']
+        time = self.data_dict['trimmed_time']
         average_force = self.data_dict['average_force']
         smooth_pos = self.data_dict['smoothed_pos']
         smooth_force = self.data_dict['smoothed_force']
@@ -568,7 +618,10 @@ class TravelerAnalysisBase:
         if (self.data_dict.get('mode') == 0):
             self.ax.set_xlabel('Vertical Depth (meters)', fontsize=18)
             self.ax.set_ylabel('Penetration Force (N)', fontsize=18)
-            self.ax.set_xlim(0, 0.05)
+            if (self.showLeadingData):
+                self.ax.set_xlim(-0.005, 0.03)
+            else:
+                self.ax.set_xlim(0, 0.03)
         else:
             self.ax.set_xlabel('Shear Length (meters)', fontsize=18)
             self.ax.set_ylabel('Shear Force (N)', fontsize=18)
@@ -576,7 +629,7 @@ class TravelerAnalysisBase:
         self.fig.suptitle(self.data_dict.get("suptitle"), fontsize=24)
         self.ax.set_title(self.data_dict.get("notes"), fontsize=18)
         self.ax.legend()
-        self.ax.tick_params(labelsize=16)
+        self.ax.tick_params(labelsize=18)
 
 
     def save_plot(self, fig_folder='figures'):

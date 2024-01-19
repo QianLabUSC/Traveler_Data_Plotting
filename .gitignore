@@ -5,3 +5,10 @@ __pycache__/
 *.zip
 *.csv
 
+# media files
+*.eps
+*.png
+*.mp4
+*.mov
+
+.DS_Store

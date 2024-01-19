@@ -6,7 +6,7 @@
 # Created Date: Wednesday, September 20th 2023
 # Author: John Bush (johncbus@usc.edu)
 # -----
-# Last Modified: Wed Nov 08 2023
+# Last Modified: Mon Dec 18 2023
 # Modified By: John Bush
 # -----
 # Copyright (c) 2023 RoboLAND
@@ -126,6 +126,12 @@ class FlexPlotter(TravelerAnalysisBase):
                                        ' (N/m)',
                                        ' (m)',
                                        ' (N)']
+        
+        self.csv_file = open(os.path.join(self.filepath, 'metrics.csv'), mode='w')
+        # create a csv writer
+        self.csv_writer = csv.writer(self.csv_file, delimiter=',')
+        # [trial_ID, location, transect, flag_number, avg_force, np.mean(stiffness), np.mean(stick_slip), average_yield, max_drop, max_drop_slope, deformation]
+        self.csv_writer.writerow(['filename', 'trial_ID', 'avg_force', 'avg_stiffness', 'avg_stick_slip', 'avg_yield', 'max_drop', 'max_drop_slope', 'deformation', 'first_rupture_displacement_ratio', 'peak_force', 'max_depth', 'first_yield', '1 cm slope', '2 mm slope'])
 
     def user_selection(self):
         self.filepath = self.select_directory()
@@ -164,6 +170,9 @@ class FlexPlotter(TravelerAnalysisBase):
             
             self.menu_prompt()
     
+    """
+    Reads feature data from a .csv file. Used for loading auxillary datasets in for analysis
+    """
     def process_features(self, filename):
         # read the data from the file
         if (filename == ''):
@@ -213,7 +222,6 @@ class FlexPlotter(TravelerAnalysisBase):
 
 
 
-
     def match_data(self, ref_vec, match_dict):
         # produces an output vector with the data in match_dict corresponding
         # to the key order presented in ref_vec. Fills in None if no match is found
@@ -255,7 +263,7 @@ class FlexPlotter(TravelerAnalysisBase):
         velocity = self.data_dict['velocity']
         avg_force = self.data_dict['average_force']
 
-        stiffness, stick_slip, average_yield, max_drop, max_drop_slope, deformation = self.calculate_metrics()
+        stiffness, stick_slip, average_yield, max_drop, max_drop_slope, deformation, first_rupture_ratio, peak_force, total_depth, first_yield = self.calculate_metrics()
         # print('Number of Stiffness Measurements: ', len(stiffness))
         # print('Number of Stick-Slip Measurements: ', len(stick_slip))
 
@@ -280,8 +288,17 @@ class FlexPlotter(TravelerAnalysisBase):
             'max_drop_deformation': deformation
         }
 
+        x = self.data_dict['smoothed_pos']
+        y = self.data_dict['smoothed_force']
+        cm_slope, _ = self.linear_regression(x, y, 0.01)
+        mm_slope, _ = self.linear_regression(x, y, 0.002)
+
+        self.csv_writer.writerow([self.path.split('/')[-1], trial_ID, avg_force, np.mean(stiffness), np.mean(stick_slip), average_yield, max_drop, max_drop_slope, deformation, first_rupture_ratio, peak_force, total_depth, first_yield, cm_slope, mm_slope])
+
         # append the dictionary for the trial to the data vector
         self.data_vector.append(trial_dict)
+
+        
 
         # add trial to the filenames vector
         self.filenames = np.append(self.filenames, self.path.split('/')[-1])
@@ -439,6 +456,8 @@ class FlexPlotter(TravelerAnalysisBase):
         self.fig.update_layout(
                             xaxis_title=x_axis + self.continuous_option_units[self.x_choice_idx],
                             yaxis_title=y_axis + self.continuous_option_units[self.y_choice_idx],
+                            xaxis_range=[0, 0.05],
+                            yaxis_range=[-2, 32],
                             font=dict(
                                 family="Arial",
                                 size=18,
