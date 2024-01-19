@@ -12,12 +12,12 @@ The directory structure is as follows:
 <Parent_Directory>
 	|  data 
 	| 	|  <Traveler Data files (.csv)>
-	|	  |  .....
+	|	|  .....
 	|  videos
-	| 	|  <Traveler Video files (corresponding to data files)
+	| 	|  <Traveler Video files (corresponding to data files)>
 	| 	|  .....
 ```
-
+- At the simplest level, all files that you want to plot should be under a directory named `data`. Any resulting generated figures will be put into a sibling directory named `figures`.
 - The data files should follow the filename convention: `<identifier>_<location>_<transect>_<protocol>_<trial number>_<timestamp>.csv` for example: `WS23_L1_T1_P_2_Tue_Mar__7_13_23_05_2023.csv`
 - In general, the plotting scripts either process single file selections or recursively process entire directories. So if you have 100 trials and want to process a set of 10 trials, you would need to copy these trials into a sibling directory following the above structure.
 - If using the `video_sync.py` module, there should be a `videos` folder that contains video files with the same filenames as the data files.
