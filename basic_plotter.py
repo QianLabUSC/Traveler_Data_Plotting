@@ -31,7 +31,9 @@ class BasePlotter(TravelerAnalysisBase):
         parser = argparse.ArgumentParser(
             usage="%(prog)s [OPTION]",
             description="Plot a single force curve or all force \
-                        curves in a directory and save the resulting figures"
+                        curves in a directory and save the resulting figures. \
+                        Defaults to plotting in batch mode by recursively processing all files \
+                        in a directory."
         )
         parser.add_argument(
             "-v","--version", action="version",
@@ -41,14 +43,13 @@ class BasePlotter(TravelerAnalysisBase):
             "-s","--single", action='store_true', help='Plots a single force curve'
         )
         parser.add_argument(
-            '-b','--batch', action='store_true', help='Plots in directory batch mode'
+            '-b','--batch', action='store_true', help='(Default) Plots in directory batch mode (recursively plots all data files within a directory)'
         )
         parser.add_argument(
             '-i','--ids', action='store_true', help='Prompts for .csv file with ids to plot'
         )
-
         parser.add_argument(
-            '-c', '--compound', action='store_true', help='Plots compound force curves'
+            '-c', '--compound', action='store_true', help='Plots compound force curves (will plot all data within a directory on top of each other)'
         )
 
         return parser
