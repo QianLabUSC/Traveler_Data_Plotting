@@ -51,6 +51,9 @@ class BasePlotter(TravelerAnalysisBase):
         parser.add_argument(
             '-c', '--compound', action='store_true', help='Plots compound force curves (will plot all data within a directory on top of each other)'
         )
+        parser.add_argument(
+            '--xaxis', action='store', default=3, help='Input the x-limit upper bound (defaults to 3 cm)'
+        )
 
         return parser
 
@@ -109,7 +112,7 @@ class BasePlotter(TravelerAnalysisBase):
         if (self.data_dict.get('mode') == 0):
             self.ax.set_xlabel('Vertical Depth (cm)', fontsize=20)
             self.ax.set_ylabel('Penetration Force (N)', fontsize=20)
-            self.ax.set_xlim(0, 3)
+            self.ax.set_xlim(0, int(self.args.xaxis))
         else:
             self.ax.set_xlabel('Shear Length (meters)', fontsize=18)
             self.ax.set_ylabel('Shear Force (N)', fontsize=18)

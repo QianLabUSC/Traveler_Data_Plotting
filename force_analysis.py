@@ -426,7 +426,7 @@ class TravelerAnalysisBase:
 
         version = 1 # WS is version 0, MH+ is version 1. MUD experiments are version 2
 
-        if (filename_args[0] == 'WS23'):
+        if (filename_args[0] == 'WS23' or 'extrude' in filename):
             version = 0
 
         if ('mud' in filename_args[0].lower()):
@@ -438,7 +438,7 @@ class TravelerAnalysisBase:
         protocol_string = ''
         mode = 0 # 0 for penetration, 1 for shear
 
-        penetration_keywords = ['enetration', 'ntrusion', 'patial', 'adially']
+        penetration_keywords = ['enetration', 'ntrusion', 'patial', 'adially', 'extrude']
         shear_keywords = ['S', 's', 'hear']
         if (protocol == 'P' or any(keyword in filename for keyword in penetration_keywords)):
             protocol_string = 'Penetration'
@@ -465,41 +465,54 @@ class TravelerAnalysisBase:
                 protocol_string = input('Enter a protocol name for this trial: ')
                 print('Interpreting data as penetration...')
 
+        if ('extrude' in filename): # for John R. filename convention 'MH23_T2_F60_extrude1 _Thu_Aug_10_12_25_34_2023'
+            location = ''
+            transect = filename_args[1]
+            transect = transect.replace('T', 'Transect ')
+            flag = filename_args[2].replace('F', '')
+            notes = ''
+            suptitle = ''
+            trial_ID = transect + ' Flag ' + flag
+            flag_temp = re.sub(r'[a-zA-Z]', '', flag)
+            if (flag_temp == ''):
+                flag_temp = -1
+            flag_num = int(float(flag_temp))
+        else:
 
-        location = filename_args[1]
-        location = location.replace('L', 'Location ')
+            location = filename_args[1]
+            location = location.replace('L', 'Location ')
 
-        transect = filename_args[2]
-        transect = transect.replace('T', 'Transect ')
+            transect = filename_args[2]
+            transect = transect.replace('T', 'Transect ')
 
-        flag = filename_args[4].replace('F', '')
+            flag = filename_args[4].replace('F', '')
         
-        if (version == 2): # for mud trials
-            flag = filename_args[3].replace('F', '')
-        flag_temp = re.sub(r'[a-zA-Z]', '', flag)
-        if (flag_temp == ''):
-            flag_temp = -1
-        flag_num = int(float(flag_temp))
-        # if flag does not have 'Flag' in it, add it
-        if 'Flag' not in flag:
-            flag = 'Flag ' + flag
+            if (version == 2): # for mud trials
+                flag = filename_args[3].replace('F', '')
+            flag_temp = re.sub(r'[a-zA-Z]', '', flag)
+            if (flag_temp == ''):
+                flag_temp = -1
+            flag_num = int(float(flag_temp))
+            # if flag does not have 'Flag' in it, add it
+            if 'Flag' not in flag:
+                flag = 'Flag ' + flag
 
-        time = filename_args[-4] + ':' + filename_args[-3]
+            time = filename_args[-4] + ':' + filename_args[-3]
 
-        trial_ID = filename_args[1] + filename_args[2] + 'F' + str(flag_num)
+            trial_ID = filename_args[1] + filename_args[2] + 'F' + str(flag_num)
 
-        # MH23_L1_T5_P_F2_T_Fri_Aug_11_11_47_04_2023.csv
-        note = ''
-        notes = ''
-        if filename_args[-7] != filename_args[5]:
-            if filename_args[-7] == filename_args[6]: # if the note is one arg long
-                note = filename_args[5]
-                notes = note + ' -- ' + time
-            else:
-                note = filename_args[5] + ' ' + filename_args[6]
-                notes = note + ' -- ' + time
-        suptitle = protocol_string + ': ' + location + ', ' + transect + ', ' + flag
-        
+            # MH23_L1_T5_P_F2_T_Fri_Aug_11_11_47_04_2023.csv
+            note = ''
+            notes = ''
+            if filename_args[-7] != filename_args[5]:
+                if filename_args[-7] == filename_args[6]: # if the note is one arg long
+                    note = filename_args[5]
+                    notes = note + ' -- ' + time
+                else:
+                    note = filename_args[5] + ' ' + filename_args[6]
+                    notes = note + ' -- ' + time
+            suptitle = protocol_string + ': ' + location + ', ' + transect + ', ' + flag
+            
         return suptitle, notes, mode, version, flag_num, location, transect, trial_ID
     
     def evaluation_function(self):

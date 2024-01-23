@@ -31,5 +31,5 @@ Install all prerequisites contained in `requirements.txt`
 - `force_analysis.py`: describes a base functionality for loading and analyzing features in the traveler data logs. This script can be run standalone, but this functionality is not maintained.
 - `basic_plotter.py` this module wraps the `force_analysis.py` module and generates simple plots. Run with `-h` flag for run options.
 - `flex_plotter_px.py` This module brings up a rudimentary interactive plotter using Plotly. The plotter is controlled through a simple terminal interface.
-- `[experimental.py](http://experimental.py)` contains experimental functionality.
+- `experimental.py` contains experimental functionality.
 - `video_sync.py` creates a video that shows a trial video and corresponding force curve with a synchronized, superimposed tracking dot. the `bias` parameter may need to be adjusted.
